@@ -1,0 +1,428 @@
+---
+title: "Solutions to regression book by Sheather, chapter 3"
+author: "Arshak Parsa"
+date: "`r Sys.Date()`"
+output:
+  html_document:
+    df_print: paged
+  pdf_document: default
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+## Library
+```{r, message=FALSE}
+library(ggplot2)
+library(car)
+library(xtable)
+library(dplyr)
+library(car)
+
+options(xtable.comment = FALSE)
+
+print_df = function(df){
+  print(xtable(df))
+}
+```
+
+## Problem 1
+
+### a
+
+All models are wrong no matter what you do! If your model produces a high 
+$R^2$, doesn't necessarily mean you found a good one! The plot on the left 
+side seems OK, but the devil is in the bloody details! If you look at the 
+plot on the right side, you recognize a quadratic pattern! Be aware, whenever 
+you see a pattern between residuals and predictors, there is something that you 
+forgot to include! Also notice that there is an outlier on top-right corner of 
+the plot, and it doesn't follow a quadratic pattern!
+
+### b
+
+Yes and no! Remember, YOU CAN ALWAYS MAKE IT BETTER! You may consider 
+following the last flow chart provided in this chapter. In summary, find 
+a lambda using either inverse response plot or Box-Cox. You can also try 
+different transformations yourself, like quadratic, logarithmic , etc.
+In the end, make sure to check any outlier or bad leverage point, remove
+them if necessary.
+
+## Problem 2
+There is no true or false in statistics! If you see a quadratic pattern 
+then add a quadratic term to your model, it MIGHT help! This statement is
+reasonable, and it could be checked by running bunch of simulation codes in R.
+
+## Problem 3
+
+### Part A
+
+#### a
+
+Load and plot:
+
+```{r}
+pr3 = read.csv("AdRevenue.csv")
+pr3['x'] = pr3$Circulation
+pr3['y'] = pr3$AdRevenue
+```
+
+```{r}
+
+ggp = ggplot(data = pr3, aes(Circulation, AdRevenue)) + geom_point()
+ggp
+```
+
+Let's write a function for testing every model
+
+```{r}
+TryModel = function(formula,d,ggp,howverbose=9,coord_tr = NULL){
+  n=nrow(pr3)
+  m = lm(formula,d)
+  ms = summary(m)
+  #print(summary(m))
+  cat(sprintf("$R^2$ = %.2f $R^2_{adj}$ = %.2f \n \n",ms$r.squared ,ms$adj.r.squared))
+  
+  
+  outliers_threshold = 2
+  outliers = d[abs(rstandard(m))>=outliers_threshold,]
+  if (howverbose>10){
+    cat("outliers: \n \n")
+    print_df(outliers)
+  }
+  
+  leverages = d[abs(hatvalues(m))>=(4/n),]
+  if (howverbose>10){
+    cat("leverages: \n \n")
+    print_df(leverages)
+  }
+  
+  if (howverbose>7){
+    cat("bad leverages: \n \n")
+    print_df(d[((abs(hatvalues(m))>=(4/n)) & (abs(rstandard(m))>=outliers_threshold)),])
+  }
+  
+  p = ggp +
+    geom_point(data = outliers, aes(x,y, colour = "Outliers"), shape = 2, size = 5) +
+    geom_point(data = leverages, aes(x,y, colour = "Leverages"), shape = 4, size = 5) +
+    geom_smooth(method = "lm", formula = formula)
+  
+  if (!is.null(coord_tr)){
+    p = p + coord_trans(x = coord_tr[1],y = coord_tr[2])
+  }
+  
+  plot(p)
+  if (howverbose>8){
+    par(mfrow=c(1,2))
+    plot(m)
+    abline(h=2,col="darkgreen",lty=3,lwd=2)
+    abline(h=-2,col="darkgreen",lty=3,lwd=2)
+    abline(v=4/n,col="hotpink",lty=3,lwd=2)
+  }
+  return(m)
+}
+```
+
+Let's do a simple regression:
+
+```{r, results="asis"}
+m1 = TryModel(y~x,pr3,ggp,howverbose = 20)
+```
+
+$R^2$ is good ,but the diagnostic plots do not seem good!
+Regarding the last plot, we've got one bad leverage point!
+
+Let's try Inverse Response Plot:
+
+```{r, results="asis"}
+lam = invResPlot(m1)$lambda[1]
+lam
+par3_irp = pr3
+par3_irp$y = (pr3$y^lam -1)/lam
+ggp_irp = ggplot(data = par3_irp, aes(Circulation, y)) + geom_point()
+m3 = TryModel(y~x,par3_irp,ggp_irp)
+
+```
+
+Let's remove those two bad leverage points 
+
+```{r, results="asis"}
+ggp_irp = ggplot(data = par3_irp[-c(4,49),], aes(Circulation, y)) + geom_point()
+m4 = TryModel(y~x,par3_irp[-c(4,49),],ggp_irp,8)
+```
+
+Got more bad leverage points? Remove more...
+
+```{r, results="asis"}
+ggp_irp = ggplot(data = par3_irp[-c(2,20,4,49),], aes(Circulation, y)) + geom_point()
+m5 = TryModel(y~x,par3_irp[-c(2,20,4,49),],ggp_irp)
+```
+
+**The moral of the story**: THOU SHALT NOT KILL (remove data)
+
+Side note: I shouldn't include my mistakes in this report, but I intentionally 
+include them because I AM A HUMAN! Humans always make mistakes and that's why 
+god loves humans more than angels! (I'm an agnostic by the way)
+
+Now let's try the two approaches introduced in this book.
+
+Approach one :
+
+```{r}
+hist(pr3$Circulation)
+pt = powerTransform(cbind(Circulation)~1,data=pr3)
+lamX = pt$lambda
+summary(pt)
+```
+
+```{r}
+pr3_ap1 = pr3
+pr3_ap1$x = pr3$x^lamX
+hist(pr3_ap1$x)
+```
+
+Looks way better! Let's correct y
+
+```{r}
+hist(pr3$AdRevenue)
+m_ap1 = lm(y~x,pr3_ap1)
+lamY = (invResPlot(m_ap1)$lambda)[1]
+lamY
+pr3_ap1$y = pr3$y ^ lamY
+hist(pr3_ap1$y)
+```
+
+Now it's time to bake our model!
+
+```{r}
+ggp_ap1 = ggplot(data = pr3_ap1, aes(x, y)) + geom_point()
+m_ap1 = TryModel(y~x,pr3_ap1,ggp_ap1)
+```
+
+Such a wow! No fucking bad leverage points? You gotta be kidding me!
+I guess I fell in love with this approach!
+
+I don't need to try the approach 2 since this model is good enough!
+
+I learned one thing though, **a highly skewed independent variable like Circulation 
+can ruin your model!**
+
+#### b
+
+We use the function `predict` to find prediction intervals and then re-transform 
+them back
+
+```{r}
+predict(m_ap1,data.frame(x=c(0.2,20)^lamX),interval = "prediction")^(1/lamY)
+```
+
+#### c
+
+The model still contains outliers.
+
+### Part B
+
+#### a
+
+The model is $Y = \alpha + \beta_1x + \beta_2x^2 + \beta_3x^3$
+
+```{r, results='asis'}
+ggp_pb = ggplot(data = pr3, aes(Circulation, AdRevenue)) + geom_point()
+m_poly = TryModel(y~x+I(x^2)+I(x^3),pr3,ggp_pb)
+```
+Worst model I've ever seen! High in $R^2$ but low in diagnostic charts!
+
+#### b
+
+Let's find a prediction interval
+
+```{r}
+predict(m_poly,data.frame(x=c(0.2,20)),interval = "prediction")
+```
+We got the worst prediction interval before GTA 6 ?!
+Dude how can Ad Revenue be possibly negative?
+
+#### c
+
+Let's test the residuals
+
+```{r}
+shapiro.test(residuals(m_poly))
+#hist(residuals(m_poly))
+```
+
+- Contains 4 bad leverage points
+- Produces too short and too long prediction intervals (even negative!)
+- Non-normal residuals 
+- Increasing pattern in the 3rd diagnostic plot
+
+### Part C
+
+#### a 
+As I said in former parts, in my opinion the approach 1 model is way better. 
+
+#### b
+
+As you guessed correctly, I would choose the prediction intervals in part A.
+
+## Problem 4
+
+### First Model
+
+#### a
+
+First plot seems OK, because it looks like there is a positive linear relationship between Time and Tonnage.
+The second plot indicates that one of our data points is an outlier.
+The third plot shows a linear pattern which is not a good sign (Thou shalt not recognize any pattern in this chart)
+The fourth plot looks OK, although the tails don't look very nice to me.
+
+Regarding the figure 3.43, Time must have normal distribution, but it looks like the distribution is something else. Additionally , the distribution of Tonnage is not normal either, which matters since we learned in the previous exercise that a skewed 
+independent variable can ruin everything.
+
+#### b
+
+A good model would produce a long prediction interval for high Tonnage since most of the data points are around 2500 tons and 10000 is too far, so the model must be uncertain for high Tonnage. We know that the 2nd plot indicates an increase in variance as we increase the Tonnage since our model assumes that the variance is constant, it would produce a too short prediction interval for high Tonnage.
+
+### Second model
+
+### a
+
+- First plot shows a linear pattern, which is good!
+- Second and 3rd plots show no pattern, which is also good!
+- 4th plot shows that the residuals are normal
+
+### b
+
+- Low $R^2$ in respect to simple model.
+
+## Problem 5
+
+First Model
+
+### a
+
+Thou shalt not be proud of your $R^2$. The second plot indicates that your model 
+contains a lot of outliers and as the DealerCost increases the variance of 
+residuals increase significantly. There is a trend in the 3rd plot.
+
+### b
+
+Either approach 1 or approach 2 might help in this situation. 
+
+Second Model
+
+### c
+
+It definitely improved since there is no pattern in the 2nd and 3rd plots.
+
+### d
+
+I think that the problem was the intercept since in the first model the 
+p-value of intercept was too high indicating that $\beta_0=0$ and if you write 
+down the equation of the model
+$$log(Y) = \beta_0 + \beta_1log(x) \rightarrow Y = e^{\beta_0}x^{\beta_1}$$
+which can be rewritten as 
+$$ Y = \alpha x^{\beta_1} $$
+where $\alpha = e^{-0.069459} = 0.9328984 \approx 1$ and $\beta_1 = 1.014836 \approx 1$
+
+Which means that if you have X amount of dealer cost, the suggested retail price
+ is going to be a little bit more. 
+
+### e
+
+- Heavy tails
+- Outliers perhaps?
+
+## Problem 6
+
+As you've seen in **Problem 3**, **a highly skewed independent variable like x can ruin your model!**
+
+## Problem 7
+Although I don't like this kind of reasoning, I try to show it like how 
+the book did it
+$$f(Y) = f(E(Y)) + f'(E(Y))(Y-E(Y)) + ... $$
+Ignore the rest of it (Stand not against us, lest you feel the sting of
+ignorance's barbs)
+$$f(Y) \approx f(E(Y)) + f'(E(Y))(Y-E(Y))$$
+Take the variance of both sides
+$$V(f(Y)) \approx [f'(E(Y))]^2V(Y)$$
+Now let's test $f(Y)=ln(Y)$
+$$V(ln(Y)) \approx [\frac{1}{\mu}]^2\mu^2=1=constant$$
+
+## Problem 8
+
+Let's read the data 
+
+```{r}
+pr8 = read.table("diamonds.txt",header = TRUE)
+pr8['x'] = pr8$Size
+pr8['y'] = pr8$Price
+```
+
+### Part 1
+
+#### a
+
+```{r, results='asis'}
+ggp = ggplot(data = pr8, aes(Size, Price)) + geom_point()
+ggp
+m = TryModel(y~x,pr8,ggp)
+hist(pr8$Size)
+hist(pr8$Price)
+```
+```{r}
+shapiro.test(pr8$Size)
+shapiro.test(pr8$Price)
+```
+
+Wow!
+
+#### b
+
+- 3rd plot tends to have an increasing pattern.
+- Contains 2 outliers.
+- The distribution of X and Y are not normal.
+
+Overall this model is good.
+
+### Part 2
+
+Let's try approach 2
+
+#### a
+
+```{r}
+pt = powerTransform(cbind(Price,Size)~1,data=pr8)
+lamX = pt$lambda["Size"]
+summary(pt)
+
+pr8_ap2 = pr8
+pr8_ap2$x = pr8$x^lamX
+pr8_ap2$y = log(pr8$y)
+shapiro.test(pr8_ap2$x)
+shapiro.test(pr8_ap2$y)
+```
+
+We try this model, although x and y didn't become normal.
+
+```{r,results='asis'}
+ggp2 = ggplot(data = pr8_ap2, aes(x, y)) + geom_point()
+ggp2
+m_ap2 = TryModel(y~x,pr8_ap2,ggp2)
+```
+It's so weird, it didn't make it better!
+
+#### b
+
+- Lower $R^2$
+- Same problems of former model
+
+
+### Part 3
+
+I would use the simpler model (Part 1), because Box-Cox transformation couldn't
+help at all!
+
+## Final words
+
+This report has been written by a human, no CHAT-GPT, no bullshit!
