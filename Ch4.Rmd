@@ -1,0 +1,132 @@
+---
+title: "Solutions to regression book by Sheather, chapter 4"
+author: "Arshak Parsa"
+date: "`r Sys.Date()`"
+output:
+  pdf_document: default
+  html_document: default
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+## Problem 1
+
+Use `scan()` and `dput()` to read data!
+
+```{r}
+xp = c(0, 2, 4, 6, 8, 12, 17, 22, 28, 34)
+size = c(17, 33, 19, 25, 18, 60, 58, 31, 34, 19)
+salary = c(101300, 111303, 98000, 124000, 128475, 117410, 115825, 134300,128066, 164700)
+```
+
+Let's have a vision 
+
+```{r}
+plot(xp,salary)
+```
+
+Try a simple model
+
+```{r}
+m = lm(salary~xp)
+summary(m)
+par(mfrow=c(2,2))
+plot(m)
+```
+
+```{r, results='asis'}
+print("OLS Estimation :")
+predict(m,data.frame(xp=c(6)))
+print("Error :")
+salary[4]-predict(m,data.frame(xp=c(6)))
+```
+
+Now, let's make a use of sample sizes
+
+```{r}
+mw = lm(salary~xp,weights = size)
+summary(mw)
+par(mfrow=c(2,2))
+plot(mw)
+```
+
+The outputs don't look good, I prefer not to use WLS in this situation!
+
+```{r}
+print("WLS Estimation :")
+predict(mw,data.frame(xp=c(6)))
+print("Error :")
+salary[4]-predict(mw,data.frame(xp=c(6)))
+```
+
+Let's do it with bare hands!
+
+```{r}
+xwm = sum(size*xp)/sum(size)
+ywm = sum(size*salary)/sum(size)
+sxw = sum(size*(xp-xwm)^2)
+sxyw = sum(size*(xp-xwm)*(salary-ywm))
+b1 = sxyw/sxw
+c(ywm - xwm*b1,b1)
+```
+
+Fun fact: If you use the inverse of the sizes as your weights, you get a 
+better model!
+
+```{r}
+mw = lm(salary~xp,weights = 1/size)
+summary(mw)
+par(mfrow=c(2,2))
+plot(mw)
+
+print("Weird WLS Estimation :")
+predict(mw,data.frame(xp=c(6)))
+print("Error :")
+salary[4]-predict(mw,data.frame(xp=c(6)))
+```
+
+
+I suspect that the problem is related to $Y_i$ since it's neither average nor median; it's a **third quantile**, so $n_i=w_i$ is not appropriate!
+Anyways, I don't like this WLS method at all!
+
+## Problem 2
+
+Easy! Let's assume $Var(e_i)=\sigma^2/w_i$ 
+
+We multiply the model equation by $\sqrt{w_i}$
+
+$$\sqrt{w_i}y_i = \sqrt{w_i}\hat{\beta}x_i + \sqrt{w_i}e_i \quad where \quad \sqrt{w_i}e_i \sim N(0,\sigma^2) $$
+
+$$SSE = \sum_{i=1}^n \hat{e_i}^2 = \sum_{i=1}^n (\sqrt{w_i}y_i - \hat{y_i})^2 = \sum_{i=1}^n (\sqrt{w_i}y_i - \sqrt{w_i}\hat{\beta}x_i)^2$$
+
+$$\frac{dSSE}{d\hat{\beta}} = \sum_{i=1}^n -2x_iw_i(y_i - \hat{\beta}x_i) = 0 $$
+
+
+$$\rightarrow \sum_{i=1}^n x_iw_i(y_i - \hat{\beta}x_i) = 0 \rightarrow \hat{\beta} = \frac{\sum_{i=1}^n x_iy_iw_i}{\sum_{i=1}^n x_i^2w_i}$$
+
+Now, since $Var(e_i|x_i)=x_i^2\sigma^2=\sigma^2/w_i$ implies $w_i=x_i^{-2}$, we get $\hat{\beta} = \frac{\sum_{i=1}^n x_i^{-1}y_i}{n}$
+
+
+## Problem 3
+
+### a
+
+According to the last subsection of this chapter (4.1.5),
+when $Y_i$ is the average or the **median** of $n_i$ observations, we 
+shall use $n_i$ as model weights. Since $Y_i$ is "2006 **median** price per square foot", it's reasonable to choose $n_i$ as 
+model weights.
+
+### b
+
+Well, just like the first problem, it looks like WLS can't do magic!
+(Sorry Tibshirani!) The plot of standardized residuals indicates 
+non-constant variance and tons of outliers!
+
+### c
+
+Try out the approach 1 or 2! It's the only magic left!
+
+One thing to note: the distribution of `x1i` and `x2i` are **highly skewed**. Sounds familiar? A transformation may definitely help!
+
