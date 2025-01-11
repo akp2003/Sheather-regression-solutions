@@ -1,0 +1,269 @@
+---
+title: "Solutions to regression book by Sheather, chapter 6"
+author: "Arshak Parsa"
+date: "`r Sys.Date()`"
+output:
+  html_document:
+    df_print: paged
+  pdf_document: default
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+library(xtable)
+options(xtable.comment = FALSE)
+```
+
+## Problem 1
+
+Well that is fairly easy! (I'm not sure why this exercise is here)
+
+$$
+Var(\hat{Y})=Var(HY)=H(Var(Y))H^\intercal=H\sigma^2IH^\intercal=\sigma^2H
+$$ 
+
+Note that H is **symmetric** and **idempotent**.
+
+### Advertisement
+
+Did you know that you can write your proofs in a proof assistant?! Yes, you heard that right, A PROOF ASSISTANT; A TRUE PATH TO SALVATION!
+
+As you may already know, most people don't care about foundations, but I do! Don't you want to know your proof is based on what axioms? Whether your proof is logical? Don't you want the machine to check your proofs? Don't you want to find more proofs with the aid of AI? If you do, follow along...
+
+I suggest you to use [LEAN](https://en.wikipedia.org/wiki/Lean_(proof_assistant)). It's an open source proof assistant so it's totally free! A lot of great theorems have been proven in lean like [The Law of Large Numbers](https://leanprover-community.github.io/mathlib4_docs/Mathlib/Probability/StrongLaw.html#ProbabilityTheory.strong_law_ae), BUT! you know what's missing? The Cochran's Theorem, Central Limit Theorem, concepts like sufficiency, completeness, etc.
+
+Join us [here](https://leanprover-community.github.io/) on Zulip, we are building the future of FORMAL SCIENCE!
+
+Did I mention the Holy Trinity of Formal Science?
+
+![The Holy Trinity of Formal Science](./The%20holy%20trinity%20of%20formal%20science2.png)
+
+OK, enough advertisement. Let's head back to regression, shall we?
+
+## Problem 2
+
+What the hell is a honeymoon effect?! Anyways, I think this is a time series problem since a lot of the measurements depend on past years and so the first six variables must be highly correlated which breaks the uncorrelated assumption (which is $Cov(\epsilon_i,\epsilon_j)=0$ I guess!)! Another thing is that some of these variables are related (which leads to multicollinearity) like $x_8$ and $x_{11}$ If I understood correctly since the high quality stadiums charge you more money thus they earn more income :) (I don't know what I'm talking about!)
+
+Anyways, I don't think multicollinearity is necessarily a problem as long as you have enough data!
+
+## Problem 3
+
+What if my answer wasn't too impressive? Would you still be so impressed? Anyways, I hope these questions be the last ones in his mind!
+
+### a
+
+In my opinion, it's not a valid model! Let me tell you why:
+
+-   Figure 6.53 shows correlation between independent variables, thus multicollinearity exists!
+-   "The plot of residuals against fitted values produces a curved pattern" even the impressed analyst admits!
+-   The right tail doesn't look normal!
+-   Bad leverage points?!(Don't cry, transformation will fix it honey!)
+
+### b
+
+A transformation MIGHT help!
+
+### c
+
+The threshold for a leverage point is $$hii>\frac{2(p+1)}{n} $$ which is
+
+```{r}
+2*(7+1)/234
+```
+
+Roughly speaking, I can confirm that the point 223 is a bad leverage point!
+
+### d
+
+-   Figure 6.55 shows correlation between independent variables, thus multicollinearity exists!
+-   Oops! More bad leverage points!(David Cox left the group!)
+-   Almost no pattern in residuals (This is good BTW)
+
+I don't like any of these models! Something is wrong with those bad leverage points!
+
+You might remove ...(NOOOOO, don't peel the orange, the doc said you may cut your hand!)
+
+### e
+
+$$F=\frac{(RSS(reduced) - RSS(full))/(df_R - df_F)}{MSE(full)}=\frac{(RSS(reduced) - RSS(full))/k}{RSS(full)/(n - p - 1)}$$
+
+First, let's examine the outputs of the book!
+
+```{r,warning=FALSE}
+library(car)
+d = read.csv("cars04.csv",header=TRUE)
+attach(d)
+tSuggestedRetailPrice <- log(SuggestedRetailPrice)
+tEngineSize <- EngineSize^0.25
+tCylinders <- log(Cylinders)
+tHorsepower <- log(Horsepower)
+tHighwayMPG <- 1/HighwayMPG
+tWheelBase <- log(WheelBase)
+FullModel <- lm(tSuggestedRetailPrice~tEngineSize+tCylinders
++tHorsepower+tHighwayMPG+Weight+tWheelBase+Hybrid)
+summary(FullModel)
+
+ReducedModel <- lm(tSuggestedRetailPrice~tEngineSize+
+tCylinders+tHorsepower+Weight+Hybrid)
+summary(ReducedModel)
+
+#I also tried this method but I got the same output as above
+#d = cbind(basicPower(d[-8],c(0,0.25,0,0,-1,1,0)),d$Hybrid)
+#lm(d$`log(SuggestedRetailPrice)`~.,d)
+```
+
+There's a problem though, **the output of full transformed regression model doesn't match up with the output in the book**, so I'm going to use the outputs produced here.
+
+```{r}
+# Manual partial F-test
+SSE_F = sum(FullModel$residuals^2)
+SSE_R = sum(ReducedModel$residuals^2)
+df_F = FullModel$df.residual
+df_R = ReducedModel$df.residual
+F_stat = ((SSE_R - SSE_F)/(df_R-df_F))/(SSE_F/df_F)
+
+F_stat
+print("p-value = ")
+pf(F_stat,df_R-df_F,df_F,lower.tail = FALSE)
+# Easy partial F-test
+anova(ReducedModel,FullModel)
+```
+
+Given the p-value equals 0.9666, there is little, if any, evidence to support the alternative hypothesis.
+
+This means that we are happy to adopt the reduced model.
+
+### f
+
+You can use regex!
+
+```{r}
+brand = as.character(regmatches(d$Vehicle.Name,gregexpr("^[^ ]*",d$Vehicle.Name)))
+
+NewModel <- lm(tSuggestedRetailPrice~tEngineSize+
+tCylinders+tHorsepower+Weight+Hybrid+brand)
+summary(NewModel)
+```
+
+Increased the $R^2_{adj}$ by 8 percentage points! Definitely worth it! 
+
+## Problem 4
+
+### a
+
+In my opinion, it's a valid model! I see almost no pattern in residuals and the variance seems to be constant. No bad leverage points. High $R^2_{adj}$.
+
+There's one thing to note here: It looks like that the **data is grouped** in someway since there are multiple different linear patterns in one scatter plot (See scatter plot between VTINV and HEAT
+in Figure 6.58 for instance). More investigation may help.
+
+### b
+
+You may add quadratic terms, but I suggest you to try one of the approaches to see if there's anything
+to learn from the data. I say it's already good enough! 
+
+### c
+
+I see one problem here, if you watch Figure 6.58 carefully, you notice that there's linear pattern between predictor variables which indicates **multicollinearity**! So why don't you use the VIF score? Or any criteria which can detect multicollinearity?
+
+## Problem 5
+
+Let's solve this one quickly!
+
+### a
+
+```{r}
+d = read.csv("pgatour2006.csv")
+y = d$PrizeMoney
+x1 = d$DrivingAccuracy
+x2 = d$GIR
+x3 = d$PuttingAverage
+x4 = d$BirdieConversion
+x5 = d$SandSaves
+x6 = d$Scrambling
+x7 = d$PuttsPerRound
+```
+
+Approach 1
+
+```{r, results='asis'}
+ap1 = summary(powerTransform(cbind(x1,x2,x3,x4,x5,x6,x7)~1,data=d))
+xtable(ap1$result)
+xtable(ap1$tests)
+```
+
+Well, according to LR test, we can say that the predictor variables 
+don't need transformation!
+
+```{r}
+invResPlot(lm(y~x1+x2+x3+x4+x5+x6+x7))
+```
+
+These results support this recommendation!
+
+### b
+
+```{r}
+logy = log(y)
+FullModel = lm(logy~x1+x2+x3+x4+x5+x6+x7)
+
+pairs(cbind(logy,x1,x2,x3,x4,x5,x6,x7))
+
+rs = rstandard(FullModel)
+
+shapiro.test(rs)
+
+par(mfrow=c(3,2),mar=c(5,4,0,0))
+plot(x1,rs)
+plot(x2,rs)
+plot(x3,rs)
+plot(x4,rs)
+plot(x5,rs)
+plot(x6,rs)
+```
+
+```{r}
+plot(x7,rs)
+
+par(mfrow=c(2,2),mar=c(5,4,0,0))
+plot(FullModel)
+```
+
+Almost everything looks good except the last plot which shows that 
+some leverage points exist!
+
+### c
+
+```{r, results='asis'}
+n = length(x1)
+p = 7
+ts = 2*(p+1)/n
+ts
+print('bad leverage points')
+d2 = d[c(1,2)]
+d2$ABS_SRES = abs(rstandard(FullModel))
+d2$ABS_leverage = abs(hatvalues(FullModel))
+
+xtable(d2[((abs(hatvalues(FullModel))>=ts) &
+(abs(rstandard(FullModel))>=2)),])
+```
+
+```{r, results='asis'}
+xtable(d2[(abs(hatvalues(FullModel))>=ts),],caption = "'leverage points'")
+```
+
+```{r, results='asis'}
+xtable(d2[(abs(rstandard(FullModel))>=2),],caption = "outliers")
+
+```
+
+Tom Lehman is the imposter!
+
+### d
+
+Outliers probably!
+
+### e
+
+Don't do it! You will cut your hand, kid! 
+
+Do it step by step since every time you remove a predictor, everything will change including p-values! Try stepwise regression!
